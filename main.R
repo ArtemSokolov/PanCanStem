@@ -23,6 +23,8 @@ genes2hugo <- function( v, srcType = "ensembl_gene_id" )
     ID
 }
 
+cat( "Loading PCBC data...\n" )
+
 ## Load RNAseq data
 X <- read_tsv("./data/PCBC/rnaseq_norm.tsv", col_types=cols()) %>%
     mutate( tracking_id = str_split( tracking_id, "\\.", simplify=TRUE )[,1] ) %>%
@@ -40,7 +42,7 @@ Y <- read_csv("./data/PCBC/meta.csv", col_types=cols()) %>%
 ## Isolate all labels for which we have data
 y <- with( Y, set_names(Class, UID) )[colnames(X)]
 
-## Map Ensembl IDs to HUGO
+cat( "Mapping Ensembl IDs to HGNC...\n" )
 V <- genes2hugo( rownames(X) )
 X <- X[V[,1],]
 rownames(X) <- V[,2]
@@ -53,7 +55,7 @@ X <- X - m
 stopifnot( identical(colnames(X), names(y)) )
 X.tr <- X[,which( y == "SC" )]
 
-## Train a one-class model
+cat( "Training a one-class model...\n" )
 mdef <- gelnet( t(X.tr) ) + model_oclr() + rglz_L2(1)
 mdl <- gelnet_train( mdef )
 
@@ -61,3 +63,23 @@ mdl <- gelnet_train( mdef )
 stemsig <- tibble(Gene = rownames(X), Weight = mdl$w)
 stemsig %>% write_csv( "pcbc-stemsig.csv" )
 
+cat( "Loading PanCan33 data...\n" )
+PCraw <- read_tsv( "data/PanCan33/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv" )
+
+cat( "Cleaing up IDs...\n" )
+PC <- PCraw %>% filter( !grepl("\\?", gene_id) ) %>%
+    mutate( across(gene_id, ~str_split(.x, "\\|", simplify=TRUE)[,1]) ) %>%
+    filter( !duplicated(gene_id) ) %>%
+    rename( Gene = gene_id )
+
+## Score each sample via Spearman correlation against the signature
+##  to produce stemness indices
+cat( "Scoring PanCan33 data...\n" )
+mRNAsi <- stemsig %>% inner_join( PC, by="Gene" ) %>%
+    summarize( across(c(-Gene, -Weight), cor, Weight,
+                      method="sp", use = "complete.obs") ) %>%
+    gather( Sample, mRNAsi ) %>%
+    mutate( across(mRNAsi, ~(.x - min(.x))/(max(.x) - min(.x))) )
+
+## Write out stemness indices to file
+write_csv( mRNAsi, "pancan33-mRNAsi.csv" )
