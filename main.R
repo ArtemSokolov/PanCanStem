@@ -1,5 +1,6 @@
-library( tidyverse )
+#!/usr/bin/env Rscript
 
+library( tidyverse )
 library( gelnet )     # https://github.com/ArtemSokolov/gelnet
 
 # Maps ENSEMBL IDs to HUGO
@@ -26,14 +27,14 @@ genes2hugo <- function( v, srcType = "ensembl_gene_id" )
 cat( "Loading PCBC data...\n" )
 
 ## Load RNAseq data
-X <- read_tsv("./data/PCBC/rnaseq_norm.tsv", col_types=cols()) %>%
+X <- read.delim("/data/PCBC/rnaseq_norm.tsv") %>%
     mutate( tracking_id = str_split( tracking_id, "\\.", simplify=TRUE )[,1] ) %>%
     column_to_rownames( "tracking_id" ) %>%
     as.matrix()
 
 ## Load metadata
 ## Fill missing labels by hand
-Y <- read_csv("./data/PCBC/meta.csv", col_types=cols()) %>%
+Y <- read_csv("/data/PCBC/meta.csv", col_types=cols()) %>%
     select( UID, Class=Diffname_short ) %>%
     mutate( across(UID, ~gsub("-", ".", .x)) ) %>%
     add_row(UID = c("SC11.014BEB.133.5.6.11", "SC12.039ECTO.420.436.92.16"),
@@ -55,16 +56,16 @@ X <- X - m
 stopifnot( identical(colnames(X), names(y)) )
 X.tr <- X[,which( y == "SC" )]
 
-cat( "Training a one-class model...\n" )
 mdef <- gelnet( t(X.tr) ) + model_oclr() + rglz_L2(1)
 mdl <- gelnet_train( mdef )
 
 ## Compose the signature and write it to a file
 stemsig <- tibble(Gene = rownames(X), Weight = mdl$w)
-stemsig %>% write_csv( "pcbc-stemsig.csv" )
+stemsig %>% write_csv( "/data/pcbc-stemsig.csv" )
 
 cat( "Loading PanCan33 data...\n" )
-PCraw <- read_tsv( "data/PanCan33/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv" )
+PCraw <- read_tsv( "/data/PanCan33/EB++AdjustPANCAN_IlluminaHiSeq_RNASeqV2.geneExp.tsv",
+                  col_types=cols())
 
 cat( "Cleaing up IDs...\n" )
 PC <- PCraw %>% filter( !grepl("\\?", gene_id) ) %>%
@@ -82,4 +83,4 @@ mRNAsi <- stemsig %>% inner_join( PC, by="Gene" ) %>%
     mutate( across(mRNAsi, ~(.x - min(.x))/(max(.x) - min(.x))) )
 
 ## Write out stemness indices to file
-write_csv( mRNAsi, "pancan33-mRNAsi.csv" )
+write_csv( mRNAsi, "/data/pancan33-mRNAsi.csv" )
