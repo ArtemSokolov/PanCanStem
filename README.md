@@ -25,3 +25,5 @@ Once the script finishes, you will find two folders, `PCBC` and `PanCan33`, cont
 ```
 docker run --rm -v "$PWD":/data artemsokolovdh/pancanstem /app/main.R
 ```
+
+The output from this operation can be found in the output/ directory.
